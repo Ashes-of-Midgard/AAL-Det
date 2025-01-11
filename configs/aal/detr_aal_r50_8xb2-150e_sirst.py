@@ -9,68 +9,87 @@ data_preprocessor = dict(
     std=[27.62, 27.62, 27.62],
     bgr_to_rgb=True,
     pad_size_divisor=1)
+
 model = dict(
-    type='SingleStageDetectorAAL',
+    type='DETR',
+    num_queries=100,
     data_preprocessor=data_preprocessor,
     backbone=dict(
-        type='MobileNetV2',
-        out_indices=(4, 7),
-        norm_cfg=dict(type='BN', eps=0.001, momentum=0.03),
-        init_cfg=dict(type='TruncNormal', layer='Conv2d', std=0.03)),
+        type='ResNet',
+        depth=50,
+        num_stages=4,
+        out_indices=(3, ),
+        frozen_stages=1,
+        norm_cfg=dict(type='BN', requires_grad=False),
+        norm_eval=True,
+        style='pytorch',
+        init_cfg=dict(type='Pretrained', checkpoint='torchvision://resnet50')),
     neck=dict(
-        type='SSDNeckCBAM',
-        in_channels=(96, 1280),
-        out_channels=(96, 1280, 512, 256, 256, 128),
-        level_strides=(2, 2, 2, 2),
-        level_paddings=(1, 1, 1, 1),
-        l2_norm_scale=None,
-        use_depthwise=True,
-        norm_cfg=dict(type='BN', eps=0.001, momentum=0.03),
-        act_cfg=dict(type='ReLU6'),
-        init_cfg=dict(type='TruncNormal', layer='Conv2d', std=0.03)),
+        type='ChannelMapper',
+        in_channels=[2048],
+        kernel_size=1,
+        out_channels=256,
+        act_cfg=None,
+        norm_cfg=None,
+        num_outs=1),
+    encoder=dict(  # DetrTransformerEncoder
+        num_layers=6,
+        layer_cfg=dict(  # DetrTransformerEncoderLayer
+            self_attn_cfg=dict(  # MultiheadAttention
+                embed_dims=256,
+                num_heads=8,
+                dropout=0.1,
+                batch_first=True),
+            ffn_cfg=dict(
+                embed_dims=256,
+                feedforward_channels=2048,
+                num_fcs=2,
+                ffn_drop=0.1,
+                act_cfg=dict(type='ReLU', inplace=True)))),
+    decoder=dict(  # DetrTransformerDecoder
+        num_layers=6,
+        layer_cfg=dict(  # DetrTransformerDecoderLayer
+            self_attn_cfg=dict(  # MultiheadAttention
+                embed_dims=256,
+                num_heads=8,
+                dropout=0.1,
+                batch_first=True),
+            cross_attn_cfg=dict(  # MultiheadAttention
+                embed_dims=256,
+                num_heads=8,
+                dropout=0.1,
+                batch_first=True),
+            ffn_cfg=dict(
+                embed_dims=256,
+                feedforward_channels=2048,
+                num_fcs=2,
+                ffn_drop=0.1,
+                act_cfg=dict(type='ReLU', inplace=True))),
+        return_intermediate=True),
+    positional_encoding=dict(num_feats=128, normalize=True),
     bbox_head=dict(
-        type='SSDHead',
-        in_channels=(96, 1280, 512, 256, 256, 128),
+        type='DETRHead',
         num_classes=1,
-        use_depthwise=True,
-        norm_cfg=dict(type='BN', eps=0.001, momentum=0.03),
-        act_cfg=dict(type='ReLU6'),
-        init_cfg=dict(type='Normal', layer='Conv2d', std=0.001),
-
-        # set anchor size manually instead of using the predefined
-        # SSD300 setting.
-        anchor_generator=dict(
-            type='SSDAnchorGenerator',
-            scale_major=False,
-            strides=[16, 32, 64, 107, 160, 320],
-            ratios=[[2, 3], [2, 3], [2, 3], [2, 3], [2, 3], [2, 3]],
-            min_sizes=[48, 100, 150, 202, 253, 304],
-            max_sizes=[100, 150, 202, 253, 304, 320]),
-        bbox_coder=dict(
-            type='DeltaXYWHBBoxCoder',
-            target_means=[.0, .0, .0, .0],
-            target_stds=[0.1, 0.1, 0.2, 0.2])),
-    # model training and testing settings
+        embed_dims=256,
+        loss_cls=dict(
+            type='CrossEntropyLoss',
+            bg_cls_weight=0.1,
+            use_sigmoid=False,
+            loss_weight=1.0,
+            class_weight=1.0),
+        loss_bbox=dict(type='L1Loss', loss_weight=5.0),
+        loss_iou=dict(type='GIoULoss', loss_weight=2.0)),
+    # training and testing settings
     train_cfg=dict(
         assigner=dict(
-            type='MaxIoUAssigner',
-            pos_iou_thr=0.5,
-            neg_iou_thr=0.5,
-            min_pos_iou=0.,
-            ignore_iof_thr=-1,
-            gt_max_assign_all=False),
-        sampler=dict(type='PseudoSampler'),
-        smoothl1_beta=1.,
-        allowed_border=-1,
-        pos_weight=-1,
-        neg_pos_ratio=3,
-        debug=False),
-    test_cfg=dict(
-        nms_pre=1000,
-        nms=dict(type='nms', iou_threshold=0.45),
-        min_bbox_size=0,
-        score_thr=0.02,
-        max_per_img=200))
+            type='HungarianAssigner',
+            match_costs=[
+                dict(type='ClassificationCost', weight=1.),
+                dict(type='BBoxL1Cost', weight=5.0, box_format='xywh'),
+                dict(type='IoUCost', iou_mode='giou', weight=2.0)
+            ])),
+    test_cfg=dict(max_per_img=100))
+
 env_cfg = dict(cudnn_benchmark=True)
 
 # dataset settings

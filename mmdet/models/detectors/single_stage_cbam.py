@@ -11,7 +11,7 @@ from .base import BaseDetector
 
 
 @MODELS.register_module()
-class SingleStageDetectorAAL(BaseDetector):
+class SingleStageDetectorCBAM(BaseDetector):
     """Base class for single-stage detectors.
 
     Single-stage detectors directly and densely predict bounding boxes on the
@@ -25,10 +25,7 @@ class SingleStageDetectorAAL(BaseDetector):
                  train_cfg: OptConfigType = None,
                  test_cfg: OptConfigType = None,
                  data_preprocessor: OptConfigType = None,
-                 init_cfg: OptMultiConfig = None,
-                 epsilon=0.001,
-                 visual_outputs=False,
-                 test_adv=False) -> None:
+                 init_cfg: OptMultiConfig = None) -> None:
         super().__init__(
             data_preprocessor=data_preprocessor, init_cfg=init_cfg)
         self.backbone = MODELS.build(backbone)
@@ -39,9 +36,6 @@ class SingleStageDetectorAAL(BaseDetector):
         self.bbox_head = MODELS.build(bbox_head)
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
-        self.epsilon = epsilon
-        self.visual_outputs = visual_outputs
-        self.test_adv = test_adv
 
     def _load_from_state_dict(self, state_dict: dict, prefix: str,
                               local_metadata: dict, strict: bool,
@@ -81,36 +75,10 @@ class SingleStageDetectorAAL(BaseDetector):
         Returns:
             dict: A dictionary of loss components.
         """
-        # MODIFIED: AAL
+        # MODIFIED: CBAM
         x, attns = self.extract_feat(batch_inputs)
-        # Adopting FGSM attack
-        ## 1. Initialize the adversarial perturbation with all zero value
-        init_adv = []
-        for i in range(len(x)):
-            init_adv.append(torch.zeros_like(x[i], device=x[i].device).requires_grad_())
-        ## 2. Perform a clean forward propagation
-        x_adv = []
-        for i in range(len(x)):
-            # Detach the features from computing graph so that the adversarial backpropagtion will not interfere with the training backpropagation
-            x_adv.append(x[i].detach()+init_adv[i])
-        losses = self.bbox_head.loss(x_adv, batch_data_samples)
-        ## 3. Backpropagate the loss to adv perturbations
-        loss_sum = torch.zeros([1]).to(losses['loss_cls'][0].device)
-        for i in range(len(losses['loss_cls'])):
-            loss_sum += losses['loss_cls'][i]
-        for i in range(len(losses['loss_bbox'])):
-            loss_sum += losses['loss_bbox'][i]
-        loss_sum.backward()
-        # 4. Generating the adversarial perturbations according to gradient
-        fgsm_adv = []
-        for i in range(len(init_adv)):
-            fgsm_adv.append(torch.sign(init_adv[i].grad).detach())
-        # 5. Apply adversarial perturbations to feats with guidance of attention
-        for i in range(len(x)):
-            x_adv[i] = x[i] + self.epsilon*attns[i]*fgsm_adv[i]
-        # 6. Calculate the training loss
-        losses = self.bbox_head.loss(x_adv, batch_data_samples)
         # END MODIFIED
+        losses = self.bbox_head.loss(x, batch_data_samples)
         return losses
 
     def predict(self,
@@ -141,46 +109,13 @@ class SingleStageDetectorAAL(BaseDetector):
                 - bboxes (Tensor): Has a shape (num_instances, 4),
                     the last dimension 4 arrange as (x1, y1, x2, y2).
         """
-        # MODIFIED: AAL
-        # Adopting FGSM attack
-        if self.test_adv:
-            ## 1. Initialize the adversarial perturbation with all zero value
-            init_adv = torch.zeros_like(batch_inputs, device=batch_inputs.device).requires_grad_()
-            ## 2. Perform a clean forward propagation
-            self.train()
-            x_adv, attns = self.extract_feat(batch_inputs + init_adv)
-            losses = self.bbox_head.loss(x_adv, batch_data_samples)
-            print(init_adv[0].requires_grad)
-            print(x_adv[0].requires_grad)
-            print(losses['loss_cls'][0].requires_grad)
-            ## 3. Backpropagate the loss to adv perturbations
-            loss_sum = torch.zeros([1]).to(losses['loss_cls'][0].device)
-            for i in range(len(losses['loss_cls'])):
-                loss_sum += losses['loss_cls'][i]
-            for i in range(len(losses['loss_bbox'])):
-                loss_sum += losses['loss_bbox'][i]
-            loss_sum.backward()
-            self.eval()
-            # 4. Generating the adversarial perturbations according to gradient
-            fgsm_adv = torch.sign(init_adv.grad).detach()
-            # 5. Apply adversarial perturbations to images
-            x_adv, attns = self.extract_feat(batch_inputs + 0.01*fgsm_adv)
-            results_list = self.bbox_head.predict(
-                x_adv, batch_data_samples, rescale=rescale)
-            batch_data_samples = self.add_pred_to_datasample(
-                batch_data_samples, results_list)
-            # 6. Visualize the results
-            if self.visual_outputs:
-                pass
-        else:
-            x, attns = self.extract_feat(batch_inputs)
-            results_list = self.bbox_head.predict(
-                x, batch_data_samples, rescale=rescale)
-            batch_data_samples = self.add_pred_to_datasample(
-                batch_data_samples, results_list)
-            if self.visual_outputs:
-                pass
+        # MODIFIED: CBAM
+        x, attns = self.extract_feat(batch_inputs)
         # END MODIFIED
+        results_list = self.bbox_head.predict(
+            x, batch_data_samples, rescale=rescale)
+        batch_data_samples = self.add_pred_to_datasample(
+            batch_data_samples, results_list)
         return batch_data_samples
 
     def _forward(
@@ -199,14 +134,10 @@ class SingleStageDetectorAAL(BaseDetector):
         Returns:
             tuple[list]: A tuple of features from ``bbox_head`` forward.
         """
-        # MODIFIED: AAL
+        # MODIFIED: CBAM
         x, attns = self.extract_feat(batch_inputs)
-        x_adv = []
-        for i in range(len(x)):
-            delta = torch.sign(torch.randn_like(x[i])).to(x[i].device)
-            x_adv.append(x[i]+self.epsilon*delta*attns[i])
-        results = self.bbox_head.forward(x_adv)
         # END MODIFIED
+        results = self.bbox_head.forward(x)
         return results
 
     def extract_feat(self, batch_inputs: Tensor) -> Tuple[Tensor]:
@@ -221,7 +152,7 @@ class SingleStageDetectorAAL(BaseDetector):
         """
         x = self.backbone(batch_inputs)
         if self.with_neck:
-        # MODIFIED: AAL
+        # MODIFIED: CBAM
             x, attns = self.neck(x)
         return x, attns
         # END MODIFIED

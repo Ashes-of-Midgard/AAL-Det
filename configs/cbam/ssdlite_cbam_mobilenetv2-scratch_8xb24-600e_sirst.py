@@ -10,7 +10,7 @@ data_preprocessor = dict(
     bgr_to_rgb=True,
     pad_size_divisor=1)
 model = dict(
-    type='SingleStageDetectorAAL',
+    type='SingleStageDetectorCBAM',
     data_preprocessor=data_preprocessor,
     backbone=dict(
         type='MobileNetV2',
@@ -132,7 +132,7 @@ test_evaluator = val_evaluator
 
 # training schedule
 max_epochs = 120
-train_cfg = dict(type='AdvTrainLoop', max_epochs=max_epochs, val_interval=5)
+train_cfg = dict(max_epochs=max_epochs, val_interval=5)
 
 # learning rate
 param_scheduler = [
