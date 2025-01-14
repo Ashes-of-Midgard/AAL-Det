@@ -3,6 +3,7 @@ from typing import List, Tuple, Union
 
 import torch
 from torch import Tensor
+import torchvision.transforms.functional as TF
 
 from mmdet.registry import MODELS
 from mmdet.structures import OptSampleList, SampleList
@@ -25,10 +26,7 @@ class SingleStageDetectorAAL(BaseDetector):
                  train_cfg: OptConfigType = None,
                  test_cfg: OptConfigType = None,
                  data_preprocessor: OptConfigType = None,
-                 init_cfg: OptMultiConfig = None,
-                 epsilon=0.001,
-                 visual_outputs=False,
-                 test_adv=False) -> None:
+                 init_cfg: OptMultiConfig = None) -> None:
         super().__init__(
             data_preprocessor=data_preprocessor, init_cfg=init_cfg)
         self.backbone = MODELS.build(backbone)
@@ -39,9 +37,6 @@ class SingleStageDetectorAAL(BaseDetector):
         self.bbox_head = MODELS.build(bbox_head)
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
-        self.epsilon = epsilon
-        self.visual_outputs = visual_outputs
-        self.test_adv = test_adv
 
     def _load_from_state_dict(self, state_dict: dict, prefix: str,
                               local_metadata: dict, strict: bool,
@@ -67,148 +62,6 @@ class SingleStageDetectorAAL(BaseDetector):
                                       strict, missing_keys, unexpected_keys,
                                       error_msgs)
 
-    def loss(self, batch_inputs: Tensor,
-             batch_data_samples: SampleList) -> Union[dict, list]:
-        """Calculate losses from a batch of inputs and data samples.
-
-        Args:
-            batch_inputs (Tensor): Input images of shape (N, C, H, W).
-                These should usually be mean centered and std scaled.
-            batch_data_samples (list[:obj:`DetDataSample`]): The batch
-                data samples. It usually includes information such
-                as `gt_instance` or `gt_panoptic_seg` or `gt_sem_seg`.
-
-        Returns:
-            dict: A dictionary of loss components.
-        """
-        # MODIFIED: AAL
-        x, attns = self.extract_feat(batch_inputs)
-        # Adopting FGSM attack
-        ## 1. Initialize the adversarial perturbation with all zero value
-        init_adv = []
-        for i in range(len(x)):
-            init_adv.append(torch.zeros_like(x[i], device=x[i].device).requires_grad_())
-        ## 2. Perform a clean forward propagation
-        x_adv = []
-        for i in range(len(x)):
-            # Detach the features from computing graph so that the adversarial backpropagtion will not interfere with the training backpropagation
-            x_adv.append(x[i].detach()+init_adv[i])
-        losses = self.bbox_head.loss(x_adv, batch_data_samples)
-        ## 3. Backpropagate the loss to adv perturbations
-        loss_sum = torch.zeros([1]).to(losses['loss_cls'][0].device)
-        for i in range(len(losses['loss_cls'])):
-            loss_sum += losses['loss_cls'][i]
-        for i in range(len(losses['loss_bbox'])):
-            loss_sum += losses['loss_bbox'][i]
-        loss_sum.backward()
-        # 4. Generating the adversarial perturbations according to gradient
-        fgsm_adv = []
-        for i in range(len(init_adv)):
-            fgsm_adv.append(torch.sign(init_adv[i].grad).detach())
-        # 5. Apply adversarial perturbations to feats with guidance of attention
-        for i in range(len(x)):
-            x_adv[i] = x[i] + self.epsilon*attns[i]*fgsm_adv[i]
-        # 6. Calculate the training loss
-        losses = self.bbox_head.loss(x_adv, batch_data_samples)
-        # END MODIFIED
-        return losses
-
-    def predict(self,
-                batch_inputs: Tensor,
-                batch_data_samples: SampleList,
-                rescale: bool = True) -> SampleList:
-        """Predict results from a batch of inputs and data samples with post-
-        processing.
-
-        Args:
-            batch_inputs (Tensor): Inputs with shape (N, C, H, W).
-            batch_data_samples (List[:obj:`DetDataSample`]): The Data
-                Samples. It usually includes information such as
-                `gt_instance`, `gt_panoptic_seg` and `gt_sem_seg`.
-            rescale (bool): Whether to rescale the results.
-                Defaults to True.
-
-        Returns:
-            list[:obj:`DetDataSample`]: Detection results of the
-            input images. Each DetDataSample usually contain
-            'pred_instances'. And the ``pred_instances`` usually
-            contains following keys.
-
-                - scores (Tensor): Classification scores, has a shape
-                    (num_instance, )
-                - labels (Tensor): Labels of bboxes, has a shape
-                    (num_instances, ).
-                - bboxes (Tensor): Has a shape (num_instances, 4),
-                    the last dimension 4 arrange as (x1, y1, x2, y2).
-        """
-        # MODIFIED: AAL
-        # Adopting FGSM attack
-        if self.test_adv:
-            ## 1. Initialize the adversarial perturbation with all zero value
-            init_adv = torch.zeros_like(batch_inputs, device=batch_inputs.device).requires_grad_()
-            ## 2. Perform a clean forward propagation
-            self.train()
-            x_adv, attns = self.extract_feat(batch_inputs + init_adv)
-            losses = self.bbox_head.loss(x_adv, batch_data_samples)
-            print(init_adv[0].requires_grad)
-            print(x_adv[0].requires_grad)
-            print(losses['loss_cls'][0].requires_grad)
-            ## 3. Backpropagate the loss to adv perturbations
-            loss_sum = torch.zeros([1]).to(losses['loss_cls'][0].device)
-            for i in range(len(losses['loss_cls'])):
-                loss_sum += losses['loss_cls'][i]
-            for i in range(len(losses['loss_bbox'])):
-                loss_sum += losses['loss_bbox'][i]
-            loss_sum.backward()
-            self.eval()
-            # 4. Generating the adversarial perturbations according to gradient
-            fgsm_adv = torch.sign(init_adv.grad).detach()
-            # 5. Apply adversarial perturbations to images
-            x_adv, attns = self.extract_feat(batch_inputs + 0.01*fgsm_adv)
-            results_list = self.bbox_head.predict(
-                x_adv, batch_data_samples, rescale=rescale)
-            batch_data_samples = self.add_pred_to_datasample(
-                batch_data_samples, results_list)
-            # 6. Visualize the results
-            if self.visual_outputs:
-                pass
-        else:
-            x, attns = self.extract_feat(batch_inputs)
-            results_list = self.bbox_head.predict(
-                x, batch_data_samples, rescale=rescale)
-            batch_data_samples = self.add_pred_to_datasample(
-                batch_data_samples, results_list)
-            if self.visual_outputs:
-                pass
-        # END MODIFIED
-        return batch_data_samples
-
-    def _forward(
-            self,
-            batch_inputs: Tensor,
-            batch_data_samples: OptSampleList = None) -> Tuple[List[Tensor]]:
-        """Network forward process. Usually includes backbone, neck and head
-        forward without any post-processing.
-
-         Args:
-            batch_inputs (Tensor): Inputs with shape (N, C, H, W).
-            batch_data_samples (list[:obj:`DetDataSample`]): Each item contains
-                the meta information of each image and corresponding
-                annotations.
-
-        Returns:
-            tuple[list]: A tuple of features from ``bbox_head`` forward.
-        """
-        # MODIFIED: AAL
-        x, attns = self.extract_feat(batch_inputs)
-        x_adv = []
-        for i in range(len(x)):
-            delta = torch.sign(torch.randn_like(x[i])).to(x[i].device)
-            x_adv.append(x[i]+self.epsilon*delta*attns[i])
-        results = self.bbox_head.forward(x_adv)
-        # END MODIFIED
-        return results
-
     def extract_feat(self, batch_inputs: Tensor) -> Tuple[Tensor]:
         """Extract features.
 
@@ -220,8 +73,14 @@ class SingleStageDetectorAAL(BaseDetector):
             different resolutions.
         """
         x = self.backbone(batch_inputs)
-        if self.with_neck:
         # MODIFIED: AAL
+        if self.with_neck:
             x, attns = self.neck(x)
-        return x, attns
+
+        self.attn = []
+        for i in range(len(attns)):
+            self.attn.append(TF.resize(attns[i], (batch_inputs.shape[2], batch_inputs.shape[3])))
+        self.attn = torch.mean(torch.stack(self.attn), dim=0).detach()
         # END MODIFIED
+
+        return x

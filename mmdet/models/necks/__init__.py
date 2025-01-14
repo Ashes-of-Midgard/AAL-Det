@@ -19,10 +19,13 @@ from .ssh import SSH
 from .yolo_neck import YOLOV3Neck
 from .yolox_pafpn import YOLOXPAFPN
 from .ssd_neck_cbam import SSDNeckCBAM
+from .channel_mapper_cbam import ChannelMapperCBAM
+from .fpn_cbam import FPNCBAM
+from .yolo_neck_cbam import YOLOV3NeckCBAM
 
 __all__ = [
     'FPN', 'BFP', 'ChannelMapper', 'HRFPN', 'NASFPN', 'FPN_CARAFE', 'PAFPN',
     'NASFCOS_FPN', 'RFP', 'YOLOV3Neck', 'FPG', 'DilatedEncoder',
     'CTResNetNeck', 'SSDNeck', 'YOLOXPAFPN', 'DyHead', 'CSPNeXtPAFPN', 'SSH',
-    'FPN_DropBlock', 'SSDNeckCBAM'
+    'FPN_DropBlock', 'SSDNeckCBAM', 'ChannelMapperCBAM', 'FPNCBAM', 'YOLOV3NeckCBAM'
 ]

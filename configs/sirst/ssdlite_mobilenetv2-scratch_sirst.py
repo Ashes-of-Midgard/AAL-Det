@@ -1,17 +1,16 @@
 _base_ = [
-    '../_base_/datasets/coco_detection.py',
     '../_base_/schedules/schedule_1x.py', '../_base_/default_runtime.py'
 ]
 
 # model settings
 data_preprocessor = dict(
     type='DetDataPreprocessor',
-    mean=[123.675, 116.28, 103.53],
-    std=[58.395, 57.12, 57.375],
+    mean=[111.89, 111.89, 111.89],
+    std=[27.62, 27.62, 27.62],
     bgr_to_rgb=True,
     pad_size_divisor=1)
 model = dict(
-    type='SingleStageDetectorAAL',
+    type='SingleStageDetector',
     data_preprocessor=data_preprocessor,
     backbone=dict(
         type='MobileNetV2',
@@ -19,7 +18,7 @@ model = dict(
         norm_cfg=dict(type='BN', eps=0.001, momentum=0.03),
         init_cfg=dict(type='TruncNormal', layer='Conv2d', std=0.03)),
     neck=dict(
-        type='SSDNeckCBAM',
+        type='SSDNeck',
         in_channels=(96, 1280),
         out_channels=(96, 1280, 512, 256, 256, 128),
         level_strides=(2, 2, 2, 2),
@@ -32,7 +31,7 @@ model = dict(
     bbox_head=dict(
         type='SSDHead',
         in_channels=(96, 1280, 512, 256, 256, 128),
-        num_classes=80,
+        num_classes=1,
         use_depthwise=True,
         norm_cfg=dict(type='BN', eps=0.001, momentum=0.03),
         act_cfg=dict(type='ReLU6'),
@@ -75,7 +74,8 @@ model = dict(
 env_cfg = dict(cudnn_benchmark=True)
 
 # dataset settings
-input_size = 320
+input_size = (1000, 600)
+data_root = 'data/open-sirst-v2'
 train_pipeline = [
     dict(type='LoadImageFromFile'),
     dict(type='LoadAnnotations', with_bbox=True),
@@ -88,7 +88,7 @@ train_pipeline = [
         type='MinIoURandomCrop',
         min_ious=(0.1, 0.3, 0.5, 0.7, 0.9),
         min_crop_size=0.3),
-    dict(type='Resize', scale=(input_size, input_size), keep_ratio=False),
+    dict(type='Resize', scale=input_size, keep_ratio=False),
     dict(type='RandomFlip', prob=0.5),
     dict(
         type='PhotoMetricDistortion',
@@ -100,7 +100,7 @@ train_pipeline = [
 ]
 test_pipeline = [
     dict(type='LoadImageFromFile'),
-    dict(type='Resize', scale=(input_size, input_size), keep_ratio=False),
+    dict(type='Resize', scale=input_size, keep_ratio=False),
     dict(type='LoadAnnotations', with_bbox=True),
     dict(
         type='PackDetInputs',
@@ -112,22 +112,30 @@ train_dataloader = dict(
     num_workers=4,
     batch_sampler=None,
     dataset=dict(
-        _delete_=True,
         type='RepeatDataset',
-        times=5,
+        times=3,
         dataset=dict(
-            type={{_base_.dataset_type}},
-            data_root={{_base_.data_root}},
-            ann_file='annotations/instances_train2017.json',
-            data_prefix=dict(img='train2017/'),
-            filter_cfg=dict(filter_empty_gt=True, min_size=32),
+            type='SirstDataset',
+            split='train_full',
+            data_root=data_root,
             pipeline=train_pipeline)))
-val_dataloader = dict(batch_size=8, dataset=dict(pipeline=test_pipeline))
+val_dataloader = dict(
+    batch_size=8,
+    dataset=dict(
+        type='SirstDataset',
+        split='val_full',
+        data_root=data_root,
+        pipeline=test_pipeline))
 test_dataloader = val_dataloader
+val_evaluator = dict(type='VOCMetric', metric='mAP', eval_mode='11points')
+test_evaluator = val_evaluator
 
 # training schedule
-max_epochs = 120
-train_cfg = dict(max_epochs=max_epochs, val_interval=5)
+max_epochs = 150
+train_cfg = dict(type='AdvTrainLoop', max_epochs=max_epochs, val_interval=5)
+test_cfg = dict(type='AdvTestLoop', vis_dir='visual')
+
+default_hooks = dict(checkpoint=dict(type='CheckpointHook', interval=1, max_keep_ckpts=3, save_best='pascal_voc/mAP'))
 
 # learning rate
 param_scheduler = [
