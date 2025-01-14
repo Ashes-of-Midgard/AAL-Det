@@ -19,7 +19,7 @@ python tools/test.py configs/aal/yolov3_aal_d53_sirst.py path/to/model.pth
 
 ||mAP(clean)|mAP(FGSM)|
 |---|---|---|
-|SSD-FGSM|0.116|0.122|
+|SSD-FGSM|0.224|0.236|
 |SSD-AAL|0.156|0.158|
 |Faster-RCNN-FGSM|||
 |Faster-RCNN-AAL|||
