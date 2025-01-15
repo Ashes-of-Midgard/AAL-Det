@@ -510,8 +510,8 @@ class YOLOV3Head(BaseDenseHead):
             feat_h, feat_w = featmap_sizes[i]
             gt_cx = ((gt_bboxes[:, 0] + gt_bboxes[:, 2]) * 0.5).to(device)
             gt_cy = ((gt_bboxes[:, 1] + gt_bboxes[:, 3]) * 0.5).to(device)
-            gt_grid_x = torch.floor(gt_cx / anchor_stride[0]).long()
-            gt_grid_y = torch.floor(gt_cy / anchor_stride[1]).long()
+            gt_grid_x = torch.clamp(torch.floor(gt_cx / anchor_stride[0]).long(), 0, feat_w-1)
+            gt_grid_y = torch.clamp(torch.floor(gt_cy / anchor_stride[1]).long(), 0, feat_h-1)
             # row major indexing
             gt_bboxes_grid_idx = gt_grid_y * feat_w + gt_grid_x
 
