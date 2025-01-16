@@ -30,8 +30,8 @@ python tools/test.py configs/aal/yolov3_aal_d53_coco.py path/to/model.pth
 |---|---|---|
 |SSD-FGSM|0.224|0.233|
 |SSD-AAL|0.192|0.225|
-|Faster-RCNN-FGSM|||
-|Faster-RCNN-AAL|||
+|Faster-RCNN-FGSM|0.595|0.595|
+|Faster-RCNN-AAL|0.550|0.553|
 |YOLOv3-FGSM|0.465|0.444|
 |YOLOv3-AAL|0.503|0.505|
 |Oscar-FGSM|||
