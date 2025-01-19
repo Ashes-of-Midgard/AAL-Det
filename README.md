@@ -18,46 +18,41 @@ git clone https://github.com/YimianDai/open-sirst-v2.git
 ```
 
 # TRAIN
-
+COCO
 ```shell
-python tools/train.py configs/aal/yolov3_aal_d53_coco.py
-python tools/test.py configs/aal/yolov3_aal_d53_coco.py path/to/model.pth
+python tools/train.py configs/aal/yolov8_coco_aal.py
+python tools/test.py configs/aal/yolov8_coco_aal.py path/to/model.pth
+```
+
+SIRST
+```shell
+python tools/train.py configs/aal/yolov8_sirst_aal.py
+python tools/test.py configs/aal/yolov8_sirst_aal.py path/to/model.pth
 ```
 
 # SIRST
 
 ||mAP(clean)|mAP(FGSM)|
 |---|---|---|
-|SSD-FGSM|0.224|0.233|
-|SSD-AAL|0.192|0.225|
-|Faster-RCNN-FGSM|0.595|0.595|
-|Faster-RCNN-AAL|0.550|0.553|
-|YOLOv3-FGSM|0.465|0.444|
-|YOLOv3-AAL|0.503|0.505|
-|Oscar-FGSM|||
-|Oscar-AAL|||
+|YOLOv8-Clean|0.515|0.508|
+|YOLOv8-FGSM|0.535|0.489|
+|YOLOv8-AAL|0.556|0.524|
 
+# COCO
+||mAP(clean)|mAP(FGSM)|
+|---|---|---|
+|YOLOv8-Clean|||
+|YOLOv8-FGSM|||
+|YOLOv8-AAL|||
 # Implementation
 
 ![alt text](image.png)
 
-We implemented multiple detection with CBAM module:
-|name|file|used in|
-|---|---|---|
-|SSDNeckCBAM|AAL-Det/mmdet/models/necks/ssd_neck_cbam.py|SSD|
-|FPNCBAM|AAL-Det/mmdet/models/necks/fpn_cbam.py|Faster-RCNN|
-|YOLOV3NeckCBAM|AAL-Det/mmdet/models/necks/yolo_neck_cbam.py|YOLOv3|
-|ChannelMapperCBAM|AAL-Det/mmdet/models/necks/channel_mapper_cbam.py|Detr|
+AAL method is supposed to improve trained models' test accuracy when the samples are perturbed by adversarial attack.
 
 Available training and testing config files:
 
-**Detr**: ```AAL-Det/configs/aal/detr_aal_r50_coco.py```, ```AAL-Det/configs/aal/detr_aal_r50_sirst.py```
-
-**Faster-RCNN**: ```AAL-Det/configs/aal/faster-rcnn_aal_r50_coco.py```, ```AAL-Det/configs/aal/faster-rcnn_aal_r50_sirst.py```
-
-**SSD**： ```AAL-Det/configs/aal/ssdlite_aal_mobilenetv2-scratch_coco.py```, ```AAL-Det/configs/aal/ssdlite_aal_mobilenetv2-scratch_sirst.py```
-
-**YOLOv3**: ```AAL-Det/configs/aal/yolov3_aal_d53_coco.py```, ```AAL-Det/configs/aal/yolov3_aal_d53_sirst.py```
+**YOLOv8**: ```AAL-Det/configs/aal/yolov8_coco_aal.py```, ```AAL-Det/configs/aal/yolov8_sirst_aal.py```
 
 The AAL training loops are implemented in ```AAL-Det/mmdet/engine/runner/loops_adv.py```.
 

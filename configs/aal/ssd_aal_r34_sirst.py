@@ -1,6 +1,5 @@
 _base_ = [
-    '../_base_/models/faster-rcnn_r50_fpn.py',
-    '../_base_/schedules/schedule_1x.py', '../_base_/default_runtime.py'
+    '../ssd/ssdlite_mobilenetv2-scratch_8xb24-600e_coco.py'
 ]
 
 # model settings
@@ -11,17 +10,29 @@ data_preprocessor = dict(
     bgr_to_rgb=True,
     pad_size_divisor=1)
 model = dict(
-    type='TwoStageDetectorAAL',
+    type='SingleStageDetectorAAL',
     data_preprocessor=data_preprocessor,
-    neck=dict(type='FPNCBAM'),
-    roi_head=dict(
-        bbox_head=dict(
-            num_classes=1)))
-env_cfg = dict(cudnn_benchmark=True)
+    backbone=dict(
+        _delete_=True,
+        type='ResNetCBAM',
+        depth=34,
+        out_indices=(2,3)
+    ),
+    neck=dict(
+        type='SSDNeckCBAM',
+        in_channels=(256, 512),
+        out_channels=(256, 512, 512, 256, 256, 128),
+    ),
+    bbox_head=dict(
+        in_channels=(256, 512, 512, 256, 256, 128),
+        num_classes=1
+        )
+    )
 
 # dataset settings
 input_size = (1000, 600)
 data_root = 'data/open-sirst-v2'
+
 train_pipeline = [
     dict(type='LoadImageFromFile'),
     dict(type='LoadAnnotations', with_bbox=True),
@@ -53,9 +64,11 @@ test_pipeline = [
         meta_keys=('img_id', 'img_path', 'ori_shape', 'img_shape',
                    'scale_factor'))
 ]
+
 train_dataloader = dict(
-    batch_size=24,
-    num_workers=4,
+    _delete_=True,
+    batch_size=2,
+    num_workers=2,
     batch_sampler=None,
     dataset=dict(
         type='RepeatDataset',
@@ -66,47 +79,19 @@ train_dataloader = dict(
             data_root=data_root,
             pipeline=train_pipeline)))
 val_dataloader = dict(
-    batch_size=8,
+    _delete_=True,
+    batch_size=1,
     dataset=dict(
         type='SirstDataset',
         split='val_full',
         data_root=data_root,
         pipeline=test_pipeline))
 test_dataloader = val_dataloader
-val_evaluator = dict(type='VOCMetric', metric='mAP', eval_mode='11points')
-test_evaluator = val_evaluator
 
-# training schedule
-max_epochs = 150
-train_cfg = dict(type='AALTrainLoop', max_epochs=max_epochs, val_interval=5)
-test_cfg = dict(type='AdvTestLoop', vis_dir='visual')
+train_cfg = dict(type='AALTrainLoop', max_epochs=150, val_interval=5)
+test_cfg = dict(type='AdvTestLoop')
 
 default_hooks = dict(checkpoint=dict(type='CheckpointHook', interval=1, max_keep_ckpts=3, save_best='pascal_voc/mAP'))
 
-# learning rate
-param_scheduler = [
-    dict(
-        type='LinearLR', start_factor=0.001, by_epoch=False, begin=0, end=500),
-    dict(
-        type='CosineAnnealingLR',
-        begin=0,
-        T_max=max_epochs,
-        end=max_epochs,
-        by_epoch=True,
-        eta_min=0)
-]
-
-# optimizer
-optim_wrapper = dict(
-    type='OptimWrapper',
-    optimizer=dict(type='SGD', lr=0.015, momentum=0.9, weight_decay=4.0e-5))
-
-custom_hooks = [
-    dict(type='NumClassCheckHook'),
-    dict(type='CheckInvalidLossHook', interval=50, priority='VERY_LOW')
-]
-
-# NOTE: `auto_scale_lr` is for automatically scaling LR,
-# USER SHOULD NOT CHANGE ITS VALUES.
-# base_batch_size = (8 GPUs) x (24 samples per GPU)
-auto_scale_lr = dict(base_batch_size=192)
+val_evaluator = dict(_delete_=True, type='VOCMetric', metric='mAP', eval_mode='11points')
+test_evaluator = val_evaluator

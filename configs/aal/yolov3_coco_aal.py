@@ -1,14 +1,10 @@
-_base_ = [
-    '../_base_/models/faster-rcnn_r50_fpn.py',
-    '../_base_/datasets/coco_detection.py',
-    '../_base_/schedules/schedule_1x.py', '../_base_/default_runtime.py'
-]
+_base_ = ['../yolo/yolov3_d53_8xb8-ms-608-273e_coco.py']
 
 # model settings
 model = dict(
-    type='TwoStageDetectorAAL',
-    backbone=dict(type='ResNetCBAM'),
-    neck=dict(type='FPNCBAM'))
+    type='YOLODetectorAAL',
+    backbone=dict(type='DarknetCBAM'),
+    neck=dict(type='YOLOV3NeckCBAM'))
 
 # training schedule
 max_epochs = 150

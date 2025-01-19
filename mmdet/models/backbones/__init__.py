@@ -17,11 +17,16 @@ from .resnext import ResNeXt
 from .ssd_vgg import SSDVGG
 from .swin import SwinTransformer
 from .trident_resnet import TridentResNet
+from .resnet_cbam import ResNetCBAM
+from .darknet_cbam import DarknetCBAM
+from .csp_darknet_yolov8 import YOLOv8CSPDarknet
+from .csp_darknet_yolov8_cbam import YOLOv8CSPDarknetCBAM
 
 __all__ = [
     'RegNet', 'ResNet', 'ResNetV1d', 'ResNeXt', 'SSDVGG', 'HRNet',
     'MobileNetV2', 'Res2Net', 'HourglassNet', 'DetectoRS_ResNet',
     'DetectoRS_ResNeXt', 'Darknet', 'ResNeSt', 'TridentResNet', 'CSPDarknet',
     'SwinTransformer', 'PyramidVisionTransformer',
-    'PyramidVisionTransformerV2', 'EfficientNet', 'CSPNeXt'
+    'PyramidVisionTransformerV2', 'EfficientNet', 'CSPNeXt', 'ResNetCBAM',
+    'DarknetCBAM', 'YOLOv8CSPDarknet', 'YOLOv8CSPDarknetCBAM'
 ]

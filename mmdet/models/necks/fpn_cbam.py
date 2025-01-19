@@ -176,7 +176,7 @@ class FPNCBAM(BaseModule):
         Returns:
             tuple: Feature maps, each is a 4D-tensor.
         """
-        assert len(inputs) == len(self.in_channels)
+        assert len(inputs) == len(self.in_channels), f"inputs number: {len(inputs)}, expected inputs number: {len(self.in_channels)}"
 
         # build laterals
         laterals = [

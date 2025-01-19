@@ -3,6 +3,7 @@ import os
 import os.path as osp
 
 import torch
+import torch.nn.functional as F
 from PIL import Image
 
 from mmengine.model import is_model_wrapper
@@ -53,24 +54,24 @@ class AdvTrainLoop(EpochBasedTrainLoop):
 
         # Adopting FGSM attack
         # 1. Initialize all zero adversarial noises
-        init_adv_noises = [torch.randn_like(x, device=data_batch['inputs'][0].device, dtype=torch.float, requires_grad=True) for x in data_batch['inputs']]
+        init_adv_noises = [torch.randn_like(x.to(torch.float), device=data_batch['inputs'][0].device, dtype=torch.float, requires_grad=True) for x in data_batch['inputs']]
         # 2. Perform a clean forward propagation
         init_adv_inputs = [data_batch['inputs'][i]+0.01*init_adv_noises[i] for i in range(len(data_batch['inputs']))]
-        adv_data_batch = {
+        init_adv_data_batch = {
             'inputs': init_adv_inputs,
             'data_samples': data_batch['data_samples']
         }
         self.runner.model.train_step(
-            adv_data_batch, optim_wrapper=self.runner.optim_wrapper)
+            init_adv_data_batch, optim_wrapper=self.runner.optim_wrapper)
         # 3. Perform an adversarial training
-        adv_noises = [init_adv_noises[i]+torch.sign(init_adv_noises[i].grad).detach().requires_grad_(False) for i in range(len(init_adv_noises))]
+        adv_noises = [init_adv_noises[i]+torch.sign(init_adv_noises[i].grad).detach() for i in range(len(init_adv_noises))]
         adv_inputs = [data_batch['inputs'][i]+0.01*adv_noises[i] for i in range(len(init_adv_noises))]
         adv_data_batch = {
             'inputs': adv_inputs,
             'data_samples': data_batch['data_samples']
         }
         outputs = self.runner.model.train_step(
-            data_batch, optim_wrapper=self.runner.optim_wrapper)
+            adv_data_batch, optim_wrapper=self.runner.optim_wrapper)
 
         self.runner.call_hook(
             'after_train_iter',
@@ -99,29 +100,24 @@ class AALTrainLoop(EpochBasedTrainLoop):
 
         # Adopting FGSM attack
         # 1. Initialize random adversarial noises
-        init_adv_noises = [torch.randn_like(x, device=data_batch['inputs'][0].device, requires_grad=True) for x in data_batch['inputs']]
+        init_adv_noises = [torch.randn_like(x.to(torch.float), device=data_batch['inputs'][0].device, requires_grad=True) for x in data_batch['inputs']]
         # 2. Perform a clean forward propagation
         init_adv_inputs = [data_batch['inputs'][i]+0.01*init_adv_noises[i] for i in range(len(data_batch['inputs']))]
-        adv_data_batch = {
+        init_adv_data_batch = {
             'inputs': init_adv_inputs,
             'data_samples': data_batch['data_samples']
         }
-        self.runner.model.train_step(
-            adv_data_batch, optim_wrapper=self.runner.optim_wrapper)
-        # Distributed training is not tested. No guarantee.
-        if is_model_wrapper(self.runner.model):
-            attn = self.runner.model.module.attn
-        else:
-            attn = self.runner.model.attn.to(data_batch['inputs'][0].device)
+        _, attns = self.runner.model.train_step(
+            init_adv_data_batch, optim_wrapper=self.runner.optim_wrapper)
         # 3. Perform an adversarial training
-        adv_noises = [init_adv_noises[i]+torch.sign(init_adv_noises[i].grad).detach().requires_grad_(False) for i in range(len(init_adv_noises))]
-        adv_inputs = [data_batch['inputs'][i]+0.01*attn[i]*adv_noises[i] for i in range(len(init_adv_noises))]
+        adv_noises = [init_adv_noises[i]+torch.sign(init_adv_noises[i].grad).detach() for i in range(len(init_adv_noises))]
+        adv_inputs = [data_batch['inputs'][i]+0.01*attns[i].to(adv_noises[i].device)*adv_noises[i] for i in range(len(init_adv_noises))]
         adv_data_batch = {
             'inputs': adv_inputs,
             'data_samples': data_batch['data_samples']
         }
-        outputs = self.runner.model.train_step(
-            data_batch, optim_wrapper=self.runner.optim_wrapper)
+        outputs,_ = self.runner.model.train_step(
+            adv_data_batch, optim_wrapper=self.runner.optim_wrapper)
 
         self.runner.call_hook(
             'after_train_iter',
@@ -147,6 +143,28 @@ class AdvTestLoop(TestLoop):
                 'target_embedding_adv': [],
                 'background_embedding_adv': []
             }
+    
+    def run(self) -> dict:
+        """Launch test."""
+        self.runner.call_hook('before_test')
+        self.runner.call_hook('before_test_epoch')
+        # self.runner.model.eval()
+
+        # clear test loss
+        self.test_loss.clear()
+        for idx, data_batch in enumerate(self.dataloader):
+            self.run_iter(idx, data_batch)
+
+        # compute metrics
+        metrics = self.evaluator.evaluate(len(self.dataloader.dataset))
+
+        if self.test_loss:
+            loss_dict = _parse_losses(self.test_loss, 'test')
+            metrics.update(loss_dict)
+
+        self.runner.call_hook('after_test_epoch', metrics=metrics)
+        self.runner.call_hook('after_test')
+        return metrics
 
     def run_iter(self, idx, data_batch: Sequence[dict]) -> None:
         """Iterate one mini-batch.
@@ -158,16 +176,25 @@ class AdvTestLoop(TestLoop):
             'before_test_iter', batch_idx=idx, data_batch=data_batch)
         
         # Adopting FGSM attack
-        # 1. Initialize all zero adversarial noises
-        init_adv_noises = [torch.randn_like(x, device=data_batch['inputs'][0].device, dtype=torch.float, requires_grad=True) for x in data_batch['inputs']]
+        # 1. Initialize adversarial noises
+        init_adv_noises = [torch.randn_like(x.to(torch.float), device=data_batch['inputs'][0].device, dtype=torch.float, requires_grad=True) for x in data_batch['inputs']]
         # 2. Perform a clean forward propagation
-        init_adv_inputs = [data_batch['inputs'][i].to(torch.float).requires_grad_(True)+0.01*init_adv_noises[i] for i in range(len(data_batch['inputs']))]
-        adv_data_batch = {
+        init_adv_inputs = [data_batch['inputs'][i]+0.01*init_adv_noises[i] for i in range(len(data_batch['inputs']))]
+        init_adv_data_batch = {
             'inputs': init_adv_inputs,
             'data_samples': data_batch['data_samples']
         }
-        adv_data_batch = self.runner.model.data_preprocessor(adv_data_batch, True)
-        losses = self.runner.model._run_forward(adv_data_batch, mode='loss')
+
+        self.runner.model.train()
+        if is_model_wrapper(self.runner.model):
+            init_adv_data_batch = self.runner.model.module.data_preprocessor(init_adv_data_batch, True)
+        else:
+            init_adv_data_batch = self.runner.model.data_preprocessor(init_adv_data_batch, True)
+
+        try: # Don't switch the order of try-except
+            losses, attns = self.runner.model._run_forward(init_adv_data_batch, mode='loss')
+        except:
+            losses = self.runner.model._run_forward(init_adv_data_batch, mode='loss')
         # 3. Backpropagate the loss to generate adversarial noises
         loss_all = []
         for loss_values in losses.values():
@@ -177,7 +204,9 @@ class AdvTestLoop(TestLoop):
                 loss_all.extend(loss_values)
         loss_sum = sum(loss_all)
         loss_sum.backward()
-        adv_noises = [init_adv_noises[i]+torch.sign(init_adv_noises[i].grad).detach().requires_grad_(False) for i in range(len(init_adv_noises))]
+        adv_noises = [init_adv_noises[i]+torch.sign(init_adv_noises[i].grad).detach() for i in range(len(init_adv_noises))]
+        
+        self.runner.model.eval()
         with torch.no_grad():
             adv_inputs = [data_batch['inputs'][i]+0.01*adv_noises[i] for i in range(len(init_adv_noises))]
             adv_data_batch = {
@@ -195,13 +224,22 @@ class AdvTestLoop(TestLoop):
             # Draw visualization result
             if self.vis_dir is not None:
                 os.makedirs(osp.join(self.runner._log_dir, self.vis_dir), exist_ok=True)
+                try: # if model outputs attns
+                    attns = torch.stack([F.interpolate(attn, init_adv_data_batch['inputs'].shape[2:4]) for attn in attns]).mean(dim=0)
+                    attns = [attns[i, :, 0:data_batch['inputs'][i].shape[1], 0:data_batch['inputs'][i][2]].detach() for i in range(len(attns))]
+                except:
+                    attns = None
                 for i in range(len(adv_noises)):
                     ori_shape = data_batch['data_samples'][i].ori_shape
                     ori_shape = (ori_shape[1], ori_shape[0])
                     name = data_batch['data_samples'][i].img_path.split('/')[-1].split('.png')[0]
                     tensor_to_pil_image(adv_noises[i]).resize(ori_shape).save(osp.join(self.runner._log_dir, self.vis_dir,f'{name}_adv_noise.png'))
                     tensor_to_pil_image(data_batch['inputs'][i]).resize(ori_shape).save(osp.join(self.runner._log_dir, self.vis_dir,f'{name}_ori.png'))
-                    tensor_to_pil_image(data_batch['inputs'][i]+0.01*adv_noises[i]).resize(ori_shape).save(osp.join(self.runner._log_dir, self.vis_dir,f'{name}_adv.png'))
+                    tensor_to_pil_image(adv_data_batch['inputs'][i]).resize(ori_shape).save(osp.join(self.runner._log_dir, self.vis_dir,f'{name}_adv.png'))
+                    if attns is not None:
+                        tensor_to_pil_image(attns[i]).resize(ori_shape).save(osp.join(self.runner._log_dir, self.vis_dir,f'{name}_attn_map.png'))
+                        tensor_to_pil_image(attns[i]*adv_noises[i]).resize(ori_shape).save(osp.join(self.runner._log_dir, self.vis_dir,f'{name}_selective_adv_noise.png'))
+                        tensor_to_pil_image(data_batch['inputs'][i]+0.01*attns[i]*adv_noises[i]).resize(ori_shape).save(osp.join(self.runner._log_dir, self.vis_dir,f'{name}_selective_adv.png'))
 
             self.runner.call_hook(
                 'after_test_iter',

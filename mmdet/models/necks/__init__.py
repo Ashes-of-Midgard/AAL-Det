@@ -22,10 +22,13 @@ from .ssd_neck_cbam import SSDNeckCBAM
 from .channel_mapper_cbam import ChannelMapperCBAM
 from .fpn_cbam import FPNCBAM
 from .yolo_neck_cbam import YOLOV3NeckCBAM
+from .yolov8_pafpn import YOLOv8PAFPN
+from .yolov8_pafpn_cbam import YOLOv8PAFPNCBAM
 
 __all__ = [
     'FPN', 'BFP', 'ChannelMapper', 'HRFPN', 'NASFPN', 'FPN_CARAFE', 'PAFPN',
     'NASFCOS_FPN', 'RFP', 'YOLOV3Neck', 'FPG', 'DilatedEncoder',
     'CTResNetNeck', 'SSDNeck', 'YOLOXPAFPN', 'DyHead', 'CSPNeXtPAFPN', 'SSH',
-    'FPN_DropBlock', 'SSDNeckCBAM', 'ChannelMapperCBAM', 'FPNCBAM', 'YOLOV3NeckCBAM'
+    'FPN_DropBlock', 'SSDNeckCBAM', 'ChannelMapperCBAM', 'FPNCBAM', 'YOLOV3NeckCBAM',
+    'YOLOv8PAFPN', 'YOLOv8PAFPNCBAM'
 ]

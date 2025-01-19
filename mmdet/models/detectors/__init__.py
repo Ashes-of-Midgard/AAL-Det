@@ -55,20 +55,20 @@ from .trident_faster_rcnn import TridentFasterRCNN
 from .two_stage import TwoStageDetector
 from .vfnet import VFNet
 from .yolact import YOLACT
-from .yolo import YOLOV3
+from .yolo import YOLODetector
 from .yolof import YOLOF
 from .yolox import YOLOX
 from .single_stage_aal import SingleStageDetectorAAL
 from .detr_aal import DETRAAL
 from .two_stage_aal import TwoStageDetectorAAL
-from .yolo_aal import YOLOV3AAL
+from .yolo_aal import YOLODetectorAAL
 
 __all__ = [
     'ATSS', 'BaseDetector', 'SingleStageDetector', 'TwoStageDetector', 'RPN',
     'KnowledgeDistillationSingleStageDetector', 'FastRCNN', 'FasterRCNN',
     'MaskRCNN', 'CascadeRCNN', 'HybridTaskCascade', 'RetinaNet', 'FCOS',
     'GridRCNN', 'MaskScoringRCNN', 'RepPointsDetector', 'FOVEA', 'FSAF',
-    'NASFCOS', 'PointRend', 'GFL', 'CornerNet', 'PAA', 'YOLOV3', 'YOLACT',
+    'NASFCOS', 'PointRend', 'GFL', 'CornerNet', 'PAA', 'YOLODetector', 'YOLACT',
     'VFNet', 'DETR', 'TridentFasterRCNN', 'SparseRCNN', 'SCNet', 'SOLO',
     'SOLOv2', 'DeformableDETR', 'AutoAssign', 'YOLOF', 'CenterNet', 'YOLOX',
     'TwoStagePanopticSegmentor', 'PanopticFPN', 'QueryInst', 'LAD', 'TOOD',
@@ -76,5 +76,5 @@ __all__ = [
     'RTMDet', 'Detectron2Wrapper', 'CrowdDet', 'CondInst', 'BoxInst',
     'DetectionTransformer', 'ConditionalDETR', 'DINO', 'DABDETR', 'GLIP',
     'DDQDETR', 'GroundingDINO', 'SingleStageDetectorAAL', 'DETRAAL', 'TwoStageDetectorAAL',
-    'YOLOV3AAL'
+    'YOLODetector', 'YOLODetectorAAL'
 ]

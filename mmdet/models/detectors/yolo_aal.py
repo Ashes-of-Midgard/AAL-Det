@@ -1,30 +1,35 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 # Copyright (c) 2019 Western Digital Corporation or its affiliates.
 
+import torch
+
 from mmdet.registry import MODELS
 from mmdet.utils import ConfigType, OptConfigType, OptMultiConfig
+from mmengine.dist import get_world_size
+from mmengine.logging import print_log
+
 from .single_stage_aal import SingleStageDetectorAAL
 
 
 @MODELS.register_module()
-class YOLOV3AAL(SingleStageDetectorAAL):
-    r"""Implementation of `Yolov3: An incremental improvement
-    <https://arxiv.org/abs/1804.02767>`_
+class YOLODetectorAAL(SingleStageDetectorAAL):
+    r"""Implementation of YOLO Series
 
     Args:
-        backbone (:obj:`ConfigDict` or dict): The backbone module.
-        neck (:obj:`ConfigDict` or dict): The neck module.
-        bbox_head (:obj:`ConfigDict` or dict): The bbox head module.
+        backbone (:obj:`ConfigDict` or dict): The backbone config.
+        neck (:obj:`ConfigDict` or dict): The neck config.
+        bbox_head (:obj:`ConfigDict` or dict): The bbox head config.
         train_cfg (:obj:`ConfigDict` or dict, optional): The training config
-            of YOLOX. Default: None.
+            of YOLO. Defaults to None.
         test_cfg (:obj:`ConfigDict` or dict, optional): The testing config
-            of YOLOX. Default: None.
-        data_preprocessor (:obj:`ConfigDict` or dict, optional):
-            Model preprocessing config for processing the input data.
-            it usually includes ``to_rgb``, ``pad_size_divisor``,
-            ``pad_value``, ``mean`` and ``std``. Defaults to None.
-        init_cfg (:obj:`ConfigDict` or dict, optional): the config to control
-            the initialization. Defaults to None.
+            of YOLO. Defaults to None.
+        data_preprocessor (:obj:`ConfigDict` or dict, optional): Config of
+            :class:`DetDataPreprocessor` to process the input data.
+            Defaults to None.
+        init_cfg (:obj:`ConfigDict` or list[:obj:`ConfigDict`] or dict or
+            list[dict], optional): Initialization config dict.
+            Defaults to None.
+        use_syncbn (bool): whether to use SyncBatchNorm. Defaults to True.
     """
 
     def __init__(self,
@@ -34,7 +39,8 @@ class YOLOV3AAL(SingleStageDetectorAAL):
                  train_cfg: OptConfigType = None,
                  test_cfg: OptConfigType = None,
                  data_preprocessor: OptConfigType = None,
-                 init_cfg: OptMultiConfig = None) -> None:
+                 init_cfg: OptMultiConfig = None,
+                 use_syncbn: bool = True):
         super().__init__(
             backbone=backbone,
             neck=neck,
@@ -43,3 +49,8 @@ class YOLOV3AAL(SingleStageDetectorAAL):
             test_cfg=test_cfg,
             data_preprocessor=data_preprocessor,
             init_cfg=init_cfg)
+
+        # TODO： Waiting for mmengine support
+        if use_syncbn and get_world_size() > 1:
+            torch.nn.SyncBatchNorm.convert_sync_batchnorm(self)
+            print_log('Using SyncBatchNorm()', 'current')

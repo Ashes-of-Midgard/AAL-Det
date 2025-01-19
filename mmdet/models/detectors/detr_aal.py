@@ -4,8 +4,8 @@ from typing import Dict, Tuple, Union, List
 import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
-import torchvision.transforms.functional as TF
 
+from mmengine.optim import OptimWrapper
 from mmdet.registry import MODELS
 from mmdet.structures import OptSampleList, SampleList
 from ..layers import (DetrTransformerDecoder, DetrTransformerEncoder,
@@ -239,12 +239,6 @@ class DETRAAL(DetectionTransformer):
         # MODIFIED: AAL
         if self.with_neck:
             x, attns = self.neck(x)
-
-        self.attn = []
-        for i in range(len(attns)):
-            self.attn.append(TF.resize(attns[i], (batch_inputs.shape[2], batch_inputs.shape[3])))
-        self.attn = torch.mean(torch.stack(self.attn), dim=0).detach()
-
         return x, attns
         # END MODIFIED
 
@@ -269,7 +263,9 @@ class DETRAAL(DetectionTransformer):
                                                     batch_data_samples)
         losses = self.bbox_head.loss(
             **head_inputs_dict, batch_data_samples=batch_data_samples)
-        return losses
+        # MODIFIED: AAL
+        return losses, attns
+        # END MODIFIED
         
     def predict(self,
                 batch_inputs: Tensor,
@@ -299,7 +295,7 @@ class DETRAAL(DetectionTransformer):
               the last dimension 4 arrange as (x1, y1, x2, y2).
         """
         # MODIFIED: ALL
-        img_feats, attns = self.extract_feat(batch_inputs)
+        img_feats, _ = self.extract_feat(batch_inputs)
         # END MODIFIED
         head_inputs_dict = self.forward_transformer(img_feats,
                                                     batch_data_samples)
@@ -309,6 +305,7 @@ class DETRAAL(DetectionTransformer):
             batch_data_samples=batch_data_samples)
         batch_data_samples = self.add_pred_to_datasample(
             batch_data_samples, results_list)
+        
         return batch_data_samples
 
     def _forward(
@@ -329,9 +326,55 @@ class DETRAAL(DetectionTransformer):
             tuple[Tensor]: A tuple of features from ``bbox_head`` forward.
         """
         # MODIFIED: AAL
-        img_feats, attns = self.extract_feat(batch_inputs)
+        img_feats, _ = self.extract_feat(batch_inputs)
         # END MODIFIED
         head_inputs_dict = self.forward_transformer(img_feats,
                                                     batch_data_samples)
         results = self.bbox_head.forward(**head_inputs_dict)
+        
         return results
+
+    def train_step(self, data: Union[dict, tuple, list],
+                   optim_wrapper: OptimWrapper) -> Dict[str, torch.Tensor]:
+        """Implements the default model training process including
+        preprocessing, model forward propagation, loss calculation,
+        optimization, and back-propagation.
+
+        During non-distributed training. If subclasses do not override the
+        :meth:`train_step`, :class:`EpochBasedTrainLoop` or
+        :class:`IterBasedTrainLoop` will call this method to update model
+        parameters. The default parameter update process is as follows:
+
+        1. Calls ``self.data_processor(data, training=False)`` to collect
+           batch_inputs and corresponding data_samples(labels).
+        2. Calls ``self(batch_inputs, data_samples, mode='loss')`` to get raw
+           loss
+        3. Calls ``self.parse_losses`` to get ``parsed_losses`` tensor used to
+           backward and dict of loss tensor used to log messages.
+        4. Calls ``optim_wrapper.update_params(loss)`` to update model.
+
+        Args:
+            data (dict or tuple or list): Data sampled from dataset.
+            optim_wrapper (OptimWrapper): OptimWrapper instance
+                used to update model parameters.
+
+        Returns:
+            Dict[str, torch.Tensor]: A ``dict`` of tensor for logging.
+        """
+        # Enable automatic mixed precision training context.
+        data_inputs_shape = [x.shape for x in data['inputs']]
+        with optim_wrapper.optim_context(self):
+            data = self.data_preprocessor(data, True)
+            # MODIFIED: AAL
+            losses, attns = self._run_forward(data, mode='loss')  # type: ignore
+            # END MODIFIED
+
+        # MODIFIED: AAL
+        attns = torch.stack([F.interpolate(attn, data['inputs'].shape[2:4]) for attn in attns]).mean(dim=0)
+        attns = [attns[i, :, 0:data_inputs_shape[i][1], 0:data_inputs_shape[i][2]].detach() for i in range(len(attns))]
+        # END MODIFIED
+        parsed_losses, log_vars = self.parse_losses(losses)  # type: ignore
+        optim_wrapper.update_params(parsed_losses)
+        # MODIFIED: AAL
+        return log_vars, attns
+        # END MODIFIED

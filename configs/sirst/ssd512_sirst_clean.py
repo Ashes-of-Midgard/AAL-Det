@@ -1,23 +1,26 @@
-_base_ = ['../yolo/yolov3_d53_8xb8-ms-608-273e_coco.py']
+_base_ = [
+    '../ssd/ssd512_coco.py'
+]
 
 # model settings
 data_preprocessor = dict(
     type='DetDataPreprocessor',
-    mean=[0, 0, 0],
-    std=[255., 255., 255.],
+    mean=[111.89, 111.89, 111.89],
+    std=[27.62, 27.62, 27.62],
     bgr_to_rgb=True,
-    pad_size_divisor=32)
+    pad_size_divisor=1)
 model = dict(
-    type='YOLOV3',
+    type='SingleStageDetector',
     data_preprocessor=data_preprocessor,
-    neck=dict(type='YOLOV3Neck'),
     bbox_head=dict(
-        type='YOLOV3Head',
-        num_classes=1))
+        num_classes=1
+        )
+    )
 
 # dataset settings
-input_size = (1000, 600)
+input_size = (512, 512)
 data_root = 'data/open-sirst-v2'
+
 train_pipeline = [
     dict(type='LoadImageFromFile'),
     dict(type='LoadAnnotations', with_bbox=True),
@@ -49,6 +52,7 @@ test_pipeline = [
         meta_keys=('img_id', 'img_path', 'ori_shape', 'img_shape',
                    'scale_factor'))
 ]
+
 train_dataloader = dict(
     _delete_=True,
     batch_size=24,
@@ -71,12 +75,31 @@ val_dataloader = dict(
         data_root=data_root,
         pipeline=test_pipeline))
 test_dataloader = val_dataloader
-val_evaluator = dict(_delete_=True, type='VOCMetric', metric='mAP', eval_mode='11points')
-test_evaluator = val_evaluator
 
-# training schedule
-max_epochs = 150
-train_cfg = dict(type='AdvTrainLoop', max_epochs=max_epochs, val_interval=5)
-test_cfg = dict(type='AdvTestLoop', vis_dir='visual')
+# train_cfg = dict(type='AdvTrainLoop', val_interval=1)
+train_cfg = dict(max_epochs=150, val_interval=5)
+test_cfg = dict(type='AdvTestLoop')
+
+# optimizer
+optim_wrapper = dict(
+    type='OptimWrapper',
+    optimizer = dict(type='SGD', lr=3e-4, momentum=0.9, weight_decay=5e-4),
+    clip_grad=dict(max_norm=35, norm_type=2),
+)
+
+param_scheduler = [
+    dict(
+        type='LinearLR', start_factor=0.001, by_epoch=False, begin=0, end=500),
+    dict(
+        type='MultiStepLR',
+        begin=0,
+        end=150,
+        by_epoch=True,
+        milestones=[80, 120],
+        gamma=0.1)
+]
 
 default_hooks = dict(checkpoint=dict(type='CheckpointHook', interval=1, max_keep_ckpts=3, save_best='pascal_voc/mAP'))
+
+val_evaluator = dict(_delete_=True, type='VOCMetric', metric='mAP', eval_mode='11points')
+test_evaluator = val_evaluator
