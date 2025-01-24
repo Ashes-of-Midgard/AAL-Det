@@ -62,6 +62,7 @@ from .single_stage_aal import SingleStageDetectorAAL
 from .detr_aal import DETRAAL
 from .two_stage_aal import TwoStageDetectorAAL
 from .yolo_aal import YOLODetectorAAL
+from .deformable_detr_aal import DeformableDETRAAL
 
 __all__ = [
     'ATSS', 'BaseDetector', 'SingleStageDetector', 'TwoStageDetector', 'RPN',
@@ -76,5 +77,5 @@ __all__ = [
     'RTMDet', 'Detectron2Wrapper', 'CrowdDet', 'CondInst', 'BoxInst',
     'DetectionTransformer', 'ConditionalDETR', 'DINO', 'DABDETR', 'GLIP',
     'DDQDETR', 'GroundingDINO', 'SingleStageDetectorAAL', 'DETRAAL', 'TwoStageDetectorAAL',
-    'YOLODetector', 'YOLODetectorAAL'
+    'YOLODetector', 'YOLODetectorAAL', 'DeformableDETRAAL'
 ]

@@ -1,8 +1,5 @@
-_base_ = [
-    '../detr/detr_r50_8xb2-150e_coco.py'
-]
+_base_ = ['../deformable_detr/deformable-detr_r50_16xb2-50e_coco.py']
 
-# model settings
 data_preprocessor = dict(
     type='DetDataPreprocessor',
     mean=[111.89, 111.89, 111.89],
@@ -10,12 +7,12 @@ data_preprocessor = dict(
     bgr_to_rgb=True,
     pad_size_divisor=1)
 model = dict(
-    type='DETRAAL',
-    init_cfg=dict(type='Pretrained', checkpoint='https://download.openmmlab.com/mmdetection/v3.0/detr/detr_r50_8xb2-150e_coco/detr_r50_8xb2-150e_coco_20221023_153551-436d03e8.pth'),
     data_preprocessor=data_preprocessor,
-    backbone = dict(type='ResNetCBAM'),
-    neck=dict(type='ChannelMapperCBAM'),
-    bbox_head=dict(num_classes=1))
+    num_queries=300,
+    backbone=dict(depth=50),
+    neck=dict(in_channels=[512, 1024, 2048]),
+    bbox_head=dict(num_classes=1)
+)
 
 # dataset settings
 input_size = (1000, 600)
@@ -55,8 +52,8 @@ test_pipeline = [
 
 train_dataloader = dict(
     _delete_=True,
-    batch_size=2,
-    num_workers=2,
+    batch_size=8,
+    num_workers=8,
     batch_sampler=None,
     dataset=dict(
         type='RepeatDataset',
@@ -76,10 +73,44 @@ val_dataloader = dict(
         pipeline=test_pipeline))
 test_dataloader = val_dataloader
 
-train_cfg = dict(type='AALTrainLoop', max_epochs=150, val_interval=5)
-test_cfg = dict(type='AdvTestLoop')
+# optimizer
+optim_wrapper = dict(
+    type='OptimWrapper',
+    optimizer=dict(type='AdamW', lr=0.0002, weight_decay=0.0001),
+    clip_grad=dict(max_norm=0.1, norm_type=2),
+    paramwise_cfg=dict(
+        custom_keys={
+            'backbone': dict(lr_mult=0.1),
+            'sampling_offsets': dict(lr_mult=0.1),
+            'reference_points': dict(lr_mult=0.1)
+        }))
 
-default_hooks = dict(checkpoint=dict(type='CheckpointHook', interval=1, max_keep_ckpts=3, save_best='pascal_voc/mAP'))
+# learning policy
+max_epochs = 40
+train_cfg = dict(
+    type='EpochBasedTrainLoop', max_epochs=max_epochs, val_interval=1)
+val_cfg = dict(type='ValLoop')
+test_cfg = dict(type='AdvTestLoop')
 
 val_evaluator = dict(_delete_=True, type='VOCMetric', metric='mAP', eval_mode='11points')
 test_evaluator = val_evaluator
+
+default_hooks = dict(checkpoint=dict(type='CheckpointHook', interval=1, max_keep_ckpts=3, save_best='pascal_voc/mAP'))
+
+param_scheduler = [
+    dict(
+        type='MultiStepLR',
+        begin=0,
+        end=max_epochs,
+        by_epoch=True,
+        milestones=[50],
+        gamma=0.1)
+]
+
+# NOTE: `auto_scale_lr` is for automatically scaling LR,
+# USER SHOULD NOT CHANGE ITS VALUES.
+# base_batch_size = (16 GPUs) x (2 samples per GPU)
+auto_scale_lr = dict(base_batch_size=32)
+
+# finetune
+load_from='https://download.openmmlab.com/mmdetection/v3.0/deformable_detr/deformable-detr_r50_16xb2-50e_coco/deformable-detr_r50_16xb2-50e_coco_20221029_210934-6bc7d21b.pth'

@@ -37,6 +37,8 @@ python tools/test.py configs/aal/yolov8_sirst_aal.py path/to/model.pth
 |YOLOv8-Clean|0.515|0.508|
 |YOLOv8-FGSM|0.535|0.489|
 |YOLOv8-AAL|0.556|0.524|
+|Deformable-Detr-FGSM|0.557||
+|Deformbale-Detr-AAL|0.574|0.553|
 
 # COCO
 ||mAP(clean)|mAP(FGSM)|
