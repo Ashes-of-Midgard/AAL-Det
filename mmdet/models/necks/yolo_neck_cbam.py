@@ -155,7 +155,7 @@ class YOLOV3NeckCBAM(BaseModule):
         attn_outs = []
         for i in range(len(outs)):
             out, attn = self.cbam_out[i](outs[i])
-            final_outs.append(out)
+            final_outs.append(out+outs[i])
             attn_outs.append(attn)
         return tuple(final_outs), tuple(attn_outs)
         # END MODIFIED

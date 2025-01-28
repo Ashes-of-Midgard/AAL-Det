@@ -1,4 +1,4 @@
-_base_ = ['../_base_/schedules/schedule_2x.py', '../_base_/default_runtime.py']
+_base_ = ['../_base_/schedules/schedule_2x.py', '../_base_/default_runtime.py', '../_base_/datasets/voc0712.py']
 
 # model settings
 deepen_factor = 0.67
@@ -9,7 +9,7 @@ affine_scale = 0.9
 mixup_prob = 0.1
 
 norm_cfg = dict(type='BN', momentum=0.03, eps=0.001)
-num_classes = 1
+num_classes = 20
 strides = [8, 16, 32]
 
 loss_cls_weight = 0.5
@@ -32,12 +32,12 @@ model_test_cfg = dict(
     nms=dict(type='nms', iou_threshold=0.7),  # NMS type and threshold
     max_per_img=300)  # Max number of detections of each image
 
-data_preprocessor = dict(
+data_preprocessor=dict(
     type='DetDataPreprocessor',
-    mean=[111.89, 111.89, 111.89],
-    std=[27.62, 27.62, 27.62],
+    mean=[123.675, 116.28, 103.53],
+    std=[1, 1, 1],
     bgr_to_rgb=True,
-    pad_size_divisor=32)
+    pad_size_divisor=1)
 
 model = dict(
     type='YOLODetector',
@@ -102,8 +102,9 @@ model = dict(
     test_cfg=model_test_cfg)
 
 # dataset setting
+dataset_type = 'VOCDataset'
+data_root = 'data/VOCdevkit/'
 input_size = (640, 640)
-data_root = 'data/open-sirst-v2'
 train_pipeline = [
     dict(type='LoadImageFromFile'),
     dict(type='LoadAnnotations', with_bbox=True),
@@ -116,7 +117,7 @@ train_pipeline = [
         type='MinIoURandomCrop',
         min_ious=(0.1, 0.3, 0.5, 0.7, 0.9),
         min_crop_size=0.3),
-    dict(type='Resize', scale=input_size, keep_ratio=False),
+    dict(type='Resize', scale=(640, 640), keep_ratio=False),
     dict(type='RandomFlip', prob=0.5),
     dict(
         type='PhotoMetricDistortion',
@@ -128,7 +129,8 @@ train_pipeline = [
 ]
 test_pipeline = [
     dict(type='LoadImageFromFile'),
-    dict(type='Resize', scale=input_size, keep_ratio=False),
+    dict(type='Resize', scale=(640, 640), keep_ratio=False),
+    # avoid bboxes being resized
     dict(type='LoadAnnotations', with_bbox=True),
     dict(
         type='PackDetInputs',
@@ -136,27 +138,36 @@ test_pipeline = [
                    'scale_factor'))
 ]
 train_dataloader = dict(
-    batch_size=16,
-    num_workers=16,
-    batch_sampler=None,
-    dataset=dict(
-        type='RepeatDataset',
-        times=3,
-        dataset=dict(
-            type='SirstDataset',
-            split='train_full',
-            data_root=data_root,
-            pipeline=train_pipeline)))
-val_dataloader = dict(
     batch_size=8,
-    dataset=dict(
-        type='SirstDataset',
-        split='val_full',
-        data_root=data_root,
-        pipeline=test_pipeline))
+    num_workers=3,
+    dataset=dict(  # RepeatDataset
+        # the dataset is repeated 10 times, and the training schedule is 2x,
+        # so the actual epoch = 12 * 10 = 120.
+        times=1,
+        dataset=dict(  # ConcatDataset
+            # VOCDataset will add different `dataset_type` in dataset.metainfo,
+            # which will get error if using ConcatDataset. Adding
+            # `ignore_keys` can avoid this error.
+            ignore_keys=['dataset_type'],
+            datasets=[
+                dict(
+                    type=dataset_type,
+                    data_root=data_root,
+                    ann_file='VOC2007/ImageSets/Main/train.txt',
+                    data_prefix=dict(sub_data_root='VOC2007/'),
+                    filter_cfg=dict(filter_empty_gt=True, min_size=32),
+                    pipeline=train_pipeline)
+                # dict(
+                #     type=dataset_type,
+                #     data_root=data_root,
+                #     ann_file='VOC2012/ImageSets/Main/train.txt',
+                #     data_prefix=dict(sub_data_root='VOC2012/'),
+                #     filter_cfg=dict(filter_empty_gt=True, min_size=32),
+                #     pipeline=train_pipeline)
+            ])))
+val_dataloader = dict(dataset=dict(ann_file='VOC2007/ImageSets/Main/val.txt',
+                                   pipeline=test_pipeline))
 test_dataloader = val_dataloader
-val_evaluator = dict(type='VOCMetric', metric='mAP', eval_mode='11points')
-test_evaluator = val_evaluator
 
 # optimizer settings
 max_epochs = 24

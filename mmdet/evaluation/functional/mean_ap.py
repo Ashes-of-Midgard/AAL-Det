@@ -1,6 +1,7 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 from multiprocessing import Pool
 
+import torch
 import numpy as np
 from mmengine.logging import print_log
 from mmengine.utils import is_str
@@ -533,7 +534,8 @@ def eval_map(det_results,
              nproc=4,
              use_legacy_coordinate=False,
              use_group_of=False,
-             eval_mode='area'):
+             eval_mode='area',
+             save_curve_path=None):
     """Evaluate mAP of a dataset.
 
     Args:
@@ -686,7 +688,18 @@ def eval_map(det_results,
         if scale_ranges is None:
             recalls = recalls[0, :]
             precisions = precisions[0, :]
+            tp = tp[0, :]
+            fp = fp[0, :]
             num_gts = num_gts.item()
+        if save_curve_path is not None:
+            # plot_pr_curve(recalls, precisions, save_path=save_pr_curve_path)
+            torch.save({"recalls": recalls,
+                        "precisions": precisions,
+                        "tp": tp,
+                        "fp": fp,
+                        "p": num_gts,
+                        "n": num_dets-num_gts},
+                        save_curve_path)
         ap = average_precision(recalls, precisions, eval_mode)
         eval_results.append({
             'num_gts': num_gts,

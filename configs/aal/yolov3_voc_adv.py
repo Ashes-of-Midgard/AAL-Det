@@ -1,3 +1,3 @@
-_base_ = ['./yolov8_sirst_clean.py']
+_base_ = ['./yolov3_voc_clean.py']
 
 train_cfg = dict(type='AdvTrainLoop')

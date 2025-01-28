@@ -50,7 +50,8 @@ class VOCMetric(BaseMetric):
                  proposal_nums: Sequence[int] = (100, 300, 1000),
                  eval_mode: str = '11points',
                  collect_device: str = 'cpu',
-                 prefix: Optional[str] = None) -> None:
+                 prefix: Optional[str] = None,
+                 save_curve_path: str = None) -> None:
         super().__init__(collect_device=collect_device, prefix=prefix)
         self.iou_thrs = [iou_thrs] if isinstance(iou_thrs, float) \
             else iou_thrs
@@ -68,6 +69,7 @@ class VOCMetric(BaseMetric):
         assert eval_mode in ['area', '11points'], \
             'Unrecognized mode, only "area" and "11points" are supported'
         self.eval_mode = eval_mode
+        self.save_curve_path = save_curve_path
 
     # TODO: data_batch is no longer needed, consider adjusting the
     #  parameter position
@@ -151,7 +153,8 @@ class VOCMetric(BaseMetric):
                     dataset=dataset_name,
                     logger=logger,
                     eval_mode=self.eval_mode,
-                    use_legacy_coordinate=True)
+                    use_legacy_coordinate=True,
+                    save_curve_path=self.save_curve_path)
                 mean_aps.append(mean_ap)
                 eval_results[f'AP{int(iou_thr * 100):02d}'] = round(mean_ap, 3)
             eval_results['mAP'] = sum(mean_aps) / len(mean_aps)
