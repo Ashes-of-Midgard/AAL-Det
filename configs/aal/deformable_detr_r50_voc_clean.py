@@ -18,6 +18,7 @@ model = dict(
 dataset_type = 'VOCDataset'
 data_root = 'data/VOCdevkit/'
 input_size = (1000, 600)
+backend_args = None
 train_pipeline = [
     dict(type='LoadImageFromFile'),
     dict(type='LoadAnnotations', with_bbox=True),
@@ -50,18 +51,18 @@ test_pipeline = [
         meta_keys=('img_id', 'img_path', 'ori_shape', 'img_shape',
                    'scale_factor'))
 ]
+
 train_dataloader = dict(
+    _delete_=True,
     batch_size=8,
     num_workers=3,
-    dataset=dict(  # RepeatDataset
-        # the dataset is repeated 10 times, and the training schedule is 2x,
-        # so the actual epoch = 12 * 10 = 120.
+    persistent_workers=True,
+    sampler=dict(type='DefaultSampler', shuffle=True),
+    dataset=dict(
+        type='RepeatDataset',
         times=1,
-        dataset=dict(  # ConcatDataset
-            # VOCDataset will add different `dataset_type` in dataset.metainfo,
-            # which will get error if using ConcatDataset. Adding
-            # `ignore_keys` can avoid this error.
-            ignore_keys=['dataset_type'],
+        dataset=dict(
+            type='ConcatDataset',
             datasets=[
                 dict(
                     type=dataset_type,
@@ -78,8 +79,21 @@ train_dataloader = dict(
                 #     filter_cfg=dict(filter_empty_gt=True, min_size=32),
                 #     pipeline=train_pipeline)
             ])))
-val_dataloader = dict(dataset=dict(ann_file='VOC2007/ImageSets/Main/val.txt',
-                                   pipeline=test_pipeline))
+val_dataloader = dict(
+    _delete_=True,
+    batch_size=1,
+    num_workers=2,
+    persistent_workers=True,
+    drop_last=False,
+    sampler=dict(type='DefaultSampler', shuffle=False),
+    dataset=dict(
+        type=dataset_type,
+        data_root=data_root,
+        ann_file='VOC2007/ImageSets/Main/val.txt',
+        data_prefix=dict(sub_data_root='VOC2007/'),
+        test_mode=True,
+        pipeline=test_pipeline,
+        backend_args=backend_args))
 test_dataloader = val_dataloader
 
 # optimizer
