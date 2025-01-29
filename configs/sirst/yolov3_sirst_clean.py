@@ -18,6 +18,7 @@ model = dict(
 # dataset settings
 input_size = (608, 608)
 data_root = 'data/open-sirst-v2'
+
 train_pipeline = [
     dict(type='LoadImageFromFile'),
     dict(type='LoadAnnotations', with_bbox=True),
