@@ -466,6 +466,7 @@ class YOLOv8PAFPNCBAM(YOLOv5PAFPN):
             norm_cfg=norm_cfg,
             act_cfg=act_cfg,
             init_cfg=init_cfg)
+        self.unspecify_attn()
 
     def build_reduce_layer(self, idx: int) -> nn.Module:
         """build reduce layer.
@@ -520,6 +521,13 @@ class YOLOv8PAFPNCBAM(YOLOv5PAFPN):
         """ Build CBAM module
         """
         return CBAMBlock(int(self.out_channels[idx]*self.widen_factor))
+    
+    def specify_attn(self, attns: List[torch.Tensor]):
+        self.attns=attns
+
+    def unspecify_attn(self):
+        self.attns=None
+    
     # END MODIFIED
 
     def forward(self, inputs: List[torch.Tensor]) -> tuple:
@@ -560,7 +568,11 @@ class YOLOv8PAFPNCBAM(YOLOv5PAFPN):
         results = []
         attns = []
         for idx in range(len(self.in_channels)):
-            result_out, attn = self.out_layers[idx](outs[idx])
+            if self.attns is not None:
+                attn=self.attns[idx]
+                result_out, attn = self.out_layers[idx](outs[idx], sp_attn=attn)
+            else:
+                result_out, attn = self.out_layers[idx](outs[idx])
             results.append(result_out)
             attns.append(attn)
 

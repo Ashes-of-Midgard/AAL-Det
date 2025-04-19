@@ -181,7 +181,7 @@ class SingleStageDetectorAAL(BaseDetector):
             Dict[str, torch.Tensor]: A ``dict`` of tensor for logging.
         """
         # Enable automatic mixed precision training context.
-        data_inputs_shape = [x.shape for x in data['inputs']]
+        # data_inputs_shape = [x.shape for x in data['inputs']]
         with optim_wrapper.optim_context(self):
             data = self.data_preprocessor(data, True)
             # MODIFIED: AAL
@@ -189,11 +189,11 @@ class SingleStageDetectorAAL(BaseDetector):
             # END MODIFIED
 
         # MODIFIED: AAL
-        attns = torch.stack([F.interpolate(attn, data['inputs'].shape[2:4]) for attn in attns]).mean(dim=0)
-        attns = [attns[i, :, 0:data_inputs_shape[i][1], 0:data_inputs_shape[i][2]].detach() for i in range(len(attns))]
+        # attns = torch.stack([F.interpolate(attn, data['inputs'].shape[2:4]) for attn in attns]).mean(dim=0)
+        # attns = [attns[i, :, 0:data_inputs_shape[i][1], 0:data_inputs_shape[i][2]].detach() for i in range(len(attns))]
         # END MODIFIED
         parsed_losses, log_vars = self.parse_losses(losses)  # type: ignore
         optim_wrapper.update_params(parsed_losses)
         # MODIFIED: AAL
-        return log_vars, attns
+        return log_vars, attns, data['inputs'].shape[2:4]
         # END MODIFIED

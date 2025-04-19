@@ -4,6 +4,8 @@ import os.path as osp
 
 import torch
 import torch.nn.functional as F
+from torch.nn.parallel import DistributedDataParallel as DDP
+import numpy as np
 from PIL import Image
 
 from mmengine.model import is_model_wrapper
@@ -107,24 +109,54 @@ class AALTrainLoop(EpochBasedTrainLoop):
             'inputs': init_adv_inputs,
             'data_samples': data_batch['data_samples']
         }
-        _, attns = self.runner.model.train_step(
+        _, attns, processed_input_shape = self.runner.model.train_step(
             init_adv_data_batch, optim_wrapper=self.runner.optim_wrapper)
-        # 3. Perform an adversarial training
+        # 3. Merge attns from each layers
+        data_inputs_shape = [x.shape for x in data_batch['inputs']]
+        attns_merged = torch.stack([F.interpolate(attn, processed_input_shape) for attn in attns]).mean(dim=0)
+        attns_merged = [attns_merged[i, :, 0:data_inputs_shape[i][1], 0:data_inputs_shape[i][2]].detach() for i in range(len(attns_merged))]
+        # 4. Generate selective adversarial samples
         adv_noises = [init_adv_noises[i]+torch.sign(init_adv_noises[i].grad).detach() for i in range(len(init_adv_noises))]
-        adv_inputs = [data_batch['inputs'][i]+0.01*attns[i].to(adv_noises[i].device)*adv_noises[i] for i in range(len(init_adv_noises))]
+        adv_inputs = [data_batch['inputs'][i]+0.01*attns_merged[i].to(adv_noises[i].device)*adv_noises[i] for i in range(len(init_adv_noises))]
+        # 5. Backtrack attns
+        noise_max_index_masks = [max_index(adv_noises[i].mean(dim=0), 0.25) for i in range(len(adv_noises))]
+        pad_for_inputs = [(processed_input_shape[0]-x.shape[1], processed_input_shape[1]-x.shape[2]) for x in data_batch['inputs']]
+        noise_max_index_masks = torch.stack([F.pad(noise_max_index_masks[i], pad=[0,pad_for_inputs[i][1],0,pad_for_inputs[i][0]]) for i in range(len(noise_max_index_masks))])
+        # print(noise_max_index_masks.shape)
+        attns_backtracked = []
+        for layer, attn in enumerate(attns):
+            attn_back = attn * (1 - 0.05*F.interpolate(noise_max_index_masks.unsqueeze(1), attn.shape[2:4]).to(attn.device))
+            attns_backtracked.append(attn_back.detach())
+        if isinstance(self.runner.model, DDP):
+            self.runner.model.module.neck.specify_attn(attns_backtracked)
+        else:
+            self.runner.model.neck.specify_attn(attns_backtracked)
+        # 6. Perform associative adversarial learning
         adv_data_batch = {
             'inputs': adv_inputs,
             'data_samples': data_batch['data_samples']
         }
-        outputs,_ = self.runner.model.train_step(
-            adv_data_batch, optim_wrapper=self.runner.optim_wrapper)
-
+        outputs = self.runner.model.train_step(
+            adv_data_batch, optim_wrapper=self.runner.optim_wrapper)[0]
+        if isinstance(self.runner.model, DDP):
+            self.runner.model.module.neck.unspecify_attn()
+        else:
+            self.runner.model.neck.unspecify_attn()
         self.runner.call_hook(
             'after_train_iter',
             batch_idx=idx,
             data_batch=data_batch,
             outputs=outputs)
         self._iter += 1
+
+
+def max_index(x, keep_rate):
+    k = int(torch.numel(x)*keep_rate)
+    _, keep_indices = torch.topk(x.flatten(), k)
+    keep_indices = np.unravel_index(np.array(keep_indices), x.shape)
+    mask =  torch.zeros_like(x, device=x.device)
+    mask[keep_indices] = 1
+    return mask
 
 
 @LOOPS.register_module()

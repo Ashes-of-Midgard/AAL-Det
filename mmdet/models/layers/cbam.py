@@ -45,8 +45,17 @@ class CBAMBlock(nn.Module):
         self.channel_attention = ChannelAttention(in_planes)
         self.spatial_attention = SpatialAttention()
 
-    def forward(self, x:Tensor):
-        x = self.channel_attention(x) * x
-        sp_attn = self.spatial_attention(x)
-        x = sp_attn * x
+    def forward(self, x:Tensor, ch_attn=None, sp_attn=None):
+        
+        if ch_attn is not None:
+            x = ch_attn*x
+        else:
+            x = self.channel_attention(x) * x
+        
+        if sp_attn is not None:
+            x = sp_attn*x
+        else:
+            sp_attn = self.spatial_attention(x)
+            x = sp_attn * x
+        
         return x, sp_attn.detach()
