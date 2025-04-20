@@ -11,4 +11,4 @@ model = dict(
 )
 
 # optimizer settings
-train_cfg = dict(type='AALTrainLoop')
+train_cfg = dict(type='AALTrainLoop', vis_dir='vis')

@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from torch.nn.parallel import DistributedDataParallel as DDP
 import numpy as np
 from PIL import Image
+import cv2
 
 from mmengine.model import is_model_wrapper
 from mmengine.runner import EpochBasedTrainLoop, TestLoop
@@ -25,6 +26,9 @@ def tensor_to_pil_image(tensor: torch.Tensor) -> Image.Image:
     tensor = (tensor * 255).type(torch.uint8)  # Convert to [0,255] uint8 value
     tensor = tensor.permute(1, 2, 0)  # convert [3, H, W] order to [H, W, 3]
     np_array = tensor.cpu().numpy()  # convert to numpy array
+    # Convert 1 channel image to hot map
+    if np_array.shape[-1] == 1:
+        np_array = cv2.applyColorMap(np_array,cv2.COLORMAP_JET)
     pil_image = Image.fromarray(np_array)  # convert to PIL image
     return pil_image
 
@@ -88,6 +92,10 @@ class AALTrainLoop(EpochBasedTrainLoop):
     """
         Customized associative adversarial training loop
     """
+    def __init__(self, vis_dir=None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.vis_dir = vis_dir
+
     def run_iter(self, idx, data_batch: Sequence[dict]) -> None:
         """Iterate one min-batch.
 
@@ -103,7 +111,7 @@ class AALTrainLoop(EpochBasedTrainLoop):
         # Adopting FGSM attack
         # 1. Initialize random adversarial noises
         init_adv_noises = [torch.randn_like(x.to(torch.float), device=data_batch['inputs'][0].device, requires_grad=True) for x in data_batch['inputs']]
-        # 2. Perform a clean forward propagation
+        # 2. Perform a clean training
         init_adv_inputs = [data_batch['inputs'][i]+0.01*init_adv_noises[i] for i in range(len(data_batch['inputs']))]
         init_adv_data_batch = {
             'inputs': init_adv_inputs,
@@ -122,11 +130,12 @@ class AALTrainLoop(EpochBasedTrainLoop):
         noise_max_index_masks = [max_index(adv_noises[i].mean(dim=0), 0.25) for i in range(len(adv_noises))]
         pad_for_inputs = [(processed_input_shape[0]-x.shape[1], processed_input_shape[1]-x.shape[2]) for x in data_batch['inputs']]
         noise_max_index_masks = torch.stack([F.pad(noise_max_index_masks[i], pad=[0,pad_for_inputs[i][1],0,pad_for_inputs[i][0]]) for i in range(len(noise_max_index_masks))])
-        # print(noise_max_index_masks.shape)
         attns_backtracked = []
         for layer, attn in enumerate(attns):
-            attn_back = attn * (1 - 0.05*F.interpolate(noise_max_index_masks.unsqueeze(1), attn.shape[2:4]).to(attn.device))
+            attn_back = torch.clamp(attn * (1 - 0.1*F.interpolate(noise_max_index_masks.unsqueeze(1), attn.shape[2:4]).to(attn.device)), min=0, max=1.0)
             attns_backtracked.append(attn_back.detach())
+        attns_backtracked_merged = torch.stack([F.interpolate(attn_backtracked, processed_input_shape) for attn_backtracked in attns_backtracked]).mean(dim=0)
+        attns_backtracked_merged = [attns_backtracked_merged[i, :, 0:data_inputs_shape[i][1], 0:data_inputs_shape[i][2]].detach() for i in range(len(attns_backtracked_merged))]
         if isinstance(self.runner.model, DDP):
             self.runner.model.module.neck.specify_attn(attns_backtracked)
         else:
@@ -142,6 +151,22 @@ class AALTrainLoop(EpochBasedTrainLoop):
             self.runner.model.module.neck.unspecify_attn()
         else:
             self.runner.model.neck.unspecify_attn()
+
+        # Draw visualization result
+        if self.vis_dir is not None and self._epoch>5:
+            os.makedirs(osp.join(self.runner._log_dir, self.vis_dir), exist_ok=True)
+            for i in range(len(adv_noises)):
+                ori_shape = data_batch['data_samples'][i].ori_shape
+                ori_shape = (ori_shape[1], ori_shape[0])
+                name = data_batch['data_samples'][i].img_path.split('/')[-1].split('.png')[0]
+                tensor_to_pil_image(adv_noises[i]).resize(ori_shape).save(osp.join(self.runner._log_dir, self.vis_dir,f'{name}_adv_noise.png'))
+                tensor_to_pil_image(data_batch['inputs'][i]).resize(ori_shape).save(osp.join(self.runner._log_dir, self.vis_dir,f'{name}_ori.png'))
+                tensor_to_pil_image(adv_data_batch['inputs'][i]).resize(ori_shape).save(osp.join(self.runner._log_dir, self.vis_dir,f'{name}_adv.png'))
+                tensor_to_pil_image(attns_merged[i]).resize(ori_shape).save(osp.join(self.runner._log_dir, self.vis_dir,f'{name}_attn_map.png'))
+                tensor_to_pil_image(attns_merged[i].to(adv_noises[i].device)*adv_noises[i]).resize(ori_shape).save(osp.join(self.runner._log_dir, self.vis_dir,f'{name}_selective_adv_noise.png'))
+                tensor_to_pil_image(adv_inputs[i]).resize(ori_shape).save(osp.join(self.runner._log_dir, self.vis_dir,f'{name}_selective_adv.png'))
+                tensor_to_pil_image(attns_backtracked_merged[i]).resize(ori_shape).save(osp.join(self.runner._log_dir, self.vis_dir,f'{name}_attn_backtracked.png'))
+        
         self.runner.call_hook(
             'after_train_iter',
             batch_idx=idx,

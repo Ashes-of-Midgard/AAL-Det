@@ -36,7 +36,7 @@ python tools/test.py configs/aal/yolov8_sirst_aal.py path/to/model.pth
 |---|---|---|
 |YOLOv8-Clean|0.515|0.508|
 |YOLOv8-FGSM|0.535|0.489|
-|YOLOv8-AAL|0.556|0.524|
+|YOLOv8-AAL|0.496|0.499|
 
 # COCO
 ||mAP(clean)|mAP(FGSM)|
